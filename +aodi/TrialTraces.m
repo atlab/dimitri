@@ -1,40 +1,40 @@
 %{
 aodi.TrialTraces (computed) # my newest table
 -> vis2p.MaskGroup
+-> vis2p.MaskGroupRaw
 -> vis2p.VisStims
 -> aodi.Filter
------
-cellnums    : blob       # cell selection
-celltypes   : blob       # cell types: neuron, PV, SST, VIP, etc
-ntraces     : smallint   # number neurons
-cell_xyz    : blob       # cell positions 
-evoked_bins : tinyint    # number of evoked bins -- the remaining bins are spontaneous 
-latency     : smallint   # (ms) presumed screen-to-V1 latency
-binsize     : smallint   # (ms) bin duration
-ntrials     : blob       # the number of trials for each direction 
-min_trials  : smallint   # min number of repeats in each condition 
-ndirs       : tinyint    # number of condition 
-directions  : blob       # directions of motion
-trace_segments : longblob                      # trace segements: nBins x nDirs x nTrials x nCells
-
+---
+cellnums                    : blob                          # cell selection
+celltypes                   : blob                          # cell types: neuron, PV, SST, VIP, etc
+ntraces                     : smallint                      # number neurons
+cell_xyz                    : blob                          # cell positions
+evoked_bins                 : tinyint                       # number of evoked bins -- the remaining bins are spontaneous
+latency                     : smallint                      # (ms) presumed screen-to-V1 latency
+binsize                     : smallint                      # (ms) bin duration
+ntrials                     : blob                          # the number of trials for each direction
+min_trials                  : smallint                      # min number of repeats in each condition
+ndirs                       : tinyint                       # number of condition
+directions                  : blob                          # directions of motion
+trace_segments              : longblob                      # trace segements: nBins x nDirs x nTrials x nCells
 %}
 
 classdef TrialTraces < dj.Relvar & dj.AutoPopulate
-
-	properties
-		popRel  = vis2p.MaskGroup * vis2p.VisStims * aodi.Filter & 'algorithm="fast_oopsi"'
-	end
-
-	methods(Access=protected)
-
-		function makeTuples(self, key)      
+    
+    properties
+        popRel  = vis2p.MaskGroup * pro(vis2p.MaskGroupRaw) * vis2p.VisStims * aodi.Filter & 'algorithm="fast_oopsi"'
+    end
+    
+    methods(Access=protected)
+        
+        function makeTuples(self, key)
             tuple = key;
             
             disp 'fetching raw traces...'
             [tuple.cellnums, tuple.celltypes, x, y, z, traces] = ...
-                fetchn(vis2p.MaskTraces*vis2p.MaskCells & key, ...
+                fetchn(pro(vis2p.MaskTraces,'mask_type')*pro(vis2p.MaskCells,'img_x','img_y','img_z')*pro(vis2p.MaskTracesRaw,'calcium_trace') & key, ...
                 'masknum', 'mask_type', 'img_x', 'img_y', 'img_z', 'calcium_trace');
-			tuple.ntraces = numel(tuple.cellnums);
+            tuple.ntraces = numel(tuple.cellnums);
             traces = double([traces{:}]);
             
             % compute xyz (microns)
@@ -45,20 +45,22 @@ classdef TrialTraces < dj.Relvar & dj.AutoPopulate
                 depth = fetch1(vis2p.Scans*vis2p.Depth & key, 'z-surfz->depth');
             end
             [xsize,ysize,zsize] = fetch1(vis2p.Movies & key, 'xsize','ysize','zsize');
-            x = x/xsize*volumeDims(1);
-            y = y/ysize*volumeDims(2);
+            x =  x/xsize*volumeDims(1);
+            y =  y/ysize*volumeDims(2);
             z = -z/zsize*volumeDims(3) + depth;
             tuple.cell_xyz = [x y z];
             
-                       
+            
             disp 'parsing stimulus...'
-            times = fetch1(vis2p.VisStims & key, 'frame_timestamps');
+            filt = fetch(aodi.Filter & key,'*');
+            times = fetch1(vis2p.MaskGroupRaw & key, 'frame_timestamps');
             times = times/1000;
             dt = median(diff(times));
-            tuple.binsize = 100;  % ms
+            
+            tuple.binsize = filt.requested_binsize;  % ms
             tuple.latency = 30;  % ms   visual latency
             times = times - tuple.latency/1000;
-                        
+            
             stimFile = fetch1(vis2p.VisStims & key, 'stim_filename');
             stim = load(getLocalPath(stimFile));
             stim = stim.stim;
@@ -100,23 +102,44 @@ classdef TrialTraces < dj.Relvar & dj.AutoPopulate
             
             trialBins = round(interval/(tuple.binsize/1000));
             tuple.evoked_bins = min(trialBins,round((duration+0.2)/(tuple.binsize/1000)));
-
-
-            filt = fetch(aodi.Filter & key,'*');
-            disp('prefiltering (high-pass)...')
+            
+            
+            M = mean(traces);
+            traces = bsxfun(@minus,traces,M);  % zero-mean
+            if filt.subtract_pc
+                disp 'subtracting largest principal components'
+                [U,D,V] = svds(traces,filt.subtract_pc);
+                ix = true(1,filt.subtract_pc);
+                if filt.subtract_pc > 1
+                    disp 'Select components interactively in ix'
+                    keyboard                
+                end
+                traces = traces - U(:,ix)*D(ix,ix)*V(:,ix)';
+            end
+            
+            disp 'prefiltering (high-pass)...'
             k = hamming(2*floor(1/filt.lo_cutoff/dt)+1);
             k = k/sum(k);
             traces = traces - convmirr(traces,k);
             
-            switch filt.algorithm 
+            disp 'downsampling to 20 Hz ...'
+            cutoff = 20;  % Hz
+            d = round(1/cutoff/dt);
+            k = hamming(2*d+1);
+            k = k/sum(k); 
+            traces = convmirr(traces,k);
+            traces = traces(ceil(d/2):d:end,:);
+            times = times(ceil(d/2):d:end);
+            dt = mean(diff(times));
+            traces = bsxfun(@rdivide, traces, std(traces));
+            
+            
+            switch filt.algorithm
                 case 'fast_oopsi'
                     disp 'deconvolving traces...'
                     deconv = @(x) fast_oopsi(x,struct('dt',dt), struct('lambda',filt.lambda));
                     for i=1:size(traces,2)
-                        t = traces(:,i);
-                        t = t - quantile(t,0.05);  % reset the baseline
-                        t = t/mean(t)-1;  %  dF/F
-                        traces(:,i) = deconv(t);
+                        traces(:,i) = deconv(traces(:,i));
                     end
                 otherwise
                     error('algorithm "%s" has not been implemented', filt.algorithm)
@@ -131,7 +154,7 @@ classdef TrialTraces < dj.Relvar & dj.AutoPopulate
             times = times(1:size(traces,1));  % sometimes times has one extra sample
             % resample signals relative to the onset
             for i=1:numel(presentations)
-                snippets{i} = interp1q(times',traces,presentations(1).onset + (0:trialBins-1)'*tuple.binsize/1000);
+                snippets{i} = interp1q(times',traces,presentations(i).onset + (0:trialBins-1)'*tuple.binsize/1000);
             end
             [presentations.snippet] = deal(snippets{:});
             [snip,directions] = dj.struct.tabulate(presentations,'snippet','direction');
@@ -140,11 +163,11 @@ classdef TrialTraces < dj.Relvar & dj.AutoPopulate
             tuple.ntrials = sum(~cellfun(@(x) isempty(x) || any(isnan(x(:))),snip),2);  % trials per condition
             tuple.min_trials = min(tuple.ntrials);
             
-            snip(cellfun(@isempty,snip)) = {nan(trialBins,tuple.ntraces)}; 
+            snip(cellfun(@isempty,snip)) = {nan(trialBins,tuple.ntraces)};
             tuple.trace_segments = permute((cell2mat(permute(snip,[3,4,1,2]))),[1 3 4 2]);
             
             self.insert(tuple)
-		end
-	end
-
+        end
+    end
+    
 end
