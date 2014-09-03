@@ -16,7 +16,7 @@ losses=null                 : longblob                      # losses for tested 
 sparsity=0                  : float                         # fraction of zeros off-diagonal
 host                        : varchar(255)                  # computer that did the job
 computing_time              : float                         # (s) time required to compute
-cm_ts=CURRENT_TIMESTAMP     : timestamp                     #
+cm_ts=CURRENT_TIMESTAMP     : timestamp                     # 
 %}
 
 classdef CovMatrix < dj.Relvar & dj.AutoPopulate
@@ -42,6 +42,10 @@ classdef CovMatrix < dj.Relvar & dj.AutoPopulate
             if ~opt.include_spont
                 X = X(1:min(evokedBins,end),:,:,:);
             end
+            if ~opt.binwise  % trial-wise correlations
+                X = sum(X,1);
+                evokedBins = 1;
+            end                
             
             % select stimulus condition
             if opt.condition

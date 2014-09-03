@@ -51,7 +51,8 @@ classdef plots
         
         
         function sigCorr
-            keys = fetch(aodi.CovMatrix & 'filter_id=4' & 'method=1' & (aodi.TrialTraces & 'evoked_bins>5' & 'min_trials>200'));
+            keys = fetch(aodi.CovMatrix & 'filter_id=4' & 'method=1' & ...
+                (aodi.TrialTraces & 'evoked_bins>5' & 'min_trials>200'));
             label = 'PV';
             cor = zeros(0,3);
             for key = keys'
@@ -145,12 +146,97 @@ classdef plots
         end
             
         
+        function pvConn
+            aodi.plots.pvConnPlot(true, false,'PV','noise correlations',          'PV-scorr')
+            aodi.plots.pvConnPlot(false,false,'PV','partial corrs',               'PV-pcorr')
+            aodi.plots.pvConnPlot(false,true, 'PV','Connectivity (LV-GLASSO)',    'PV-pconn')
+            aodi.plots.pvConnPlot(true, true, 'PV','Connectivity (thresh. corrs)','PV-sconn')
+        end
         
-        function pvConn            
-            label = 'PV';
-            doCorrs = true;
-            doThresh = false;
-            keys = fetch(aodi.CovMatrix & 'filter_id=4' & 'method=100' & (aodi.TrialTraces & 'evoked_bins>5'));
+        function pvConnPlot(doCorrs,doThresh,cellType,titl,filepath)
+            [enn,epn,epp,inn,ipn,ipp] = aodi.plots.pvConnHelper(doCorrs,doThresh,cellType);
+            filepath = fullfile(aodi.plots.figPath, filepath);
+            
+            for iPlot=1:3
+                switch iPlot
+                    case 1
+                        xylabels ={'-/-' '-/+'};
+                        x1 = enn;
+                        x2 = inn;
+                        y1 = epn;
+                        y2 = ipn;
+                        
+                    case 2
+                        xylabels ={'-/-' '+/+'};
+                        x1 = enn;
+                        x2 = inn;
+                        y1 = epp;
+                        y2 = ipp;
+                        
+                    case 3
+                        xylabels ={'-/+' '+/+'};
+                        x1 = epn;
+                        x2 = ipn;
+                        y1 = epp;
+                        y2 = ipp;
+                end
+                
+                fig = Figure(1,'size',[80 80]);
+                scatter(x1,y1,'ko','filled')
+                if ~isempty(x2)
+                    hold on
+                    scatter(x2,y2,'r^','filled')
+                    legend positive negative
+                    legend Location SouthEast
+                    legend boxoff
+                    for i=1:length(enn)
+                        line([x1(i) x2(i)],[y1(i) y2(i)],'Color',[1 1 1]*0.7)
+                    end
+                    hold off
+                end
+                mx = max(max(x1), max(y1));
+                ticks = 10^floor(log10(mx));
+                ticks = 0:ticks:10*ticks;
+                
+                set(gca,'XTick',ticks,'YTick',ticks,'XTickLabel',ticks,'YTickLabel',ticks)
+                axis(1.1*[0 1 0 1]*mx)
+                set(refline(1),'Color',[1 1 1]*0.7,'LineWidth',.5,'LineStyle',':')
+                xlabel(xylabels{1})
+                ylabel(xylabels{2})
+                grid on
+                title(titl)
+                fig.cleanup
+                fig.save(sprintf('%s-scatter%d.eps',filepath,iPlot))
+            end
+            
+            fig = Figure(1,'size',[83 35]);
+            h = boxplot([enn' epn' epp'],'colors','k','labels',{'-/-' '-/+' '+/+'},'orientation','horizontal');
+            set(h(1:2,:),'LineStyle','-','LineWidth',.25)
+            set(h(7,:),'MarkerEdgeColor','k')
+            xlim(min(xlim,xlim.*[0 1]))
+            xlabel(titl)
+            str = @(n) sprintf('%0.1g',n);
+            set(gca,'XTickLabel', arrayfun(str, get(gca,'XTick'), 'uni', false))
+            fig.cleanup
+            fig.save(sprintf('%s-bars-pos.eps',filepath))
+            
+            if ~isempty(inn)
+                fig = Figure(1,'size',[83 35]);
+                h = boxplot([inn' ipn' ipp'],'colors','k','labels',{'-/-' '-/+' '+/+'},'orientation','horizontal');
+                set(h(1:2,:),'LineStyle','-','LineWidth',.25)
+                set(h(7,:),'MarkerEdgeColor','k')
+                xlim(min(xlim,xlim.*[0 1]))
+                xlabel([titl '(neg)'])
+                fig.cleanup
+                fig.save(sprintf('%s-bars-neg.eps',filepath))
+            end
+
+        end
+        
+        
+        function [enn,epn,epp,inn,ipn,ipp] = pvConnHelper(doCorrs,doThresh,cellType)    
+            keys = fetch(aodi.CovMatrix & 'filter_id=11' & 'method=100' & ...
+                (aodi.TrialTraces & 'evoked_bins>5') & (aodi.Labels & struct('celltype',cellType)));
             epp = [];
             epn = [];
             enn = [];
@@ -167,8 +253,7 @@ classdef plots
                     aodi.CovMatrix*aodi.ActiveCells*aodi.TrialTraces & key, ...
                     'sparse','selection','celltypes','lowrank');
                 p = sum(selection);
-                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',1),'corr_matrix');
-                C0 = corrcov(C0);
+                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',0),'corr_matrix');
                 if cove.avgCorr(C0)>0.05
                     continue
                 end
@@ -186,7 +271,7 @@ classdef plots
                 
                 cellTypes = cellTypes(selection);
                 neurons = cellfun(@(c) strcmp(c,'neuron'), cellTypes);
-                pv = cellfun(@(c) strcmp(c,label), cellTypes);
+                pv = cellfun(@(c) strcmp(c,cellType), cellTypes);
                 
                 if any(pv)
                     fprintf('%d latent units (%d observed)\n', size(L'))
@@ -198,79 +283,36 @@ classdef plots
                         S = S.*(1-eye(p));
                         exc = S>0;
                         inh = S<0;
-                        epp(end+1) = mean(mean(exc(pv,pv)));
-                        epn(end+1) = mean(mean(exc(neurons,pv)));
-                        enn(end+1) = mean(mean(exc(neurons,neurons)));
+                        epp(end+1) = mean(mean(exc(pv,pv))); %#ok<AGROW>
+                        epn(end+1) = mean(mean(exc(neurons,pv)));%#ok<AGROW>
+                        enn(end+1) = mean(mean(exc(neurons,neurons)));%#ok<AGROW>
 
-                        ipp(end+1) = mean(mean(inh(pv,pv)));
-                        ipn(end+1) = mean(mean(inh(neurons,pv)));
-                        inn(end+1) = mean(mean(inh(neurons,neurons)));
+                        ipp(end+1) = mean(mean(inh(pv,pv)));%#ok<AGROW>
+                        ipn(end+1) = mean(mean(inh(neurons,pv)));%#ok<AGROW>
+                        inn(end+1) = mean(mean(inh(neurons,neurons)));%#ok<AGROW>
                     else
+                        % average correlations are stored in the excitatory
+                        % connections
                         if ~doCorrs
                             S = corrcov(S-L*L');
                         end
-                        epp(end+1) = cove.avgCorr(S(pv,pv));
-                        epn(end+1) = mean(mean(S(neurons,pv)));
-                        enn(end+1) = cove.avgCorr(S(neurons,neurons));
+                        epp(end+1) = cove.avgCorr(S(pv,pv));%#ok<AGROW>
+                        epn(end+1) = mean(mean(S(neurons,pv)));%#ok<AGROW>
+                        enn(end+1) = cove.avgCorr(S(neurons,neurons));%#ok<AGROW>
                     end
                 end
             end
-            if ~doCorrs && ~doThresh 
+            if ~doCorrs && ~doThresh
+                % flip the sign back
                 epp = -epp;
                 epn = -epn;
                 enn = -enn;
             end
-            
-            % specify plots
-            set1 = {enn epn};   % first set (black)
-            set2 = {inn ipn};   % second set (red)
-            lx = sprintf('%s-/-',label);
-            ly = sprintf('%s+/-',label);
-            
-            % plot
-            fig = Figure(1,'size',[80 80]);
-            scatter(set1{1},set1{2},'ko','filled')
-            if doThresh
-                hold on
-                scatter(set2{1},set2{2},'r^','filled')
-                legend positive negative
-                legend Location SouthEast
-                legend boxoff
-                for i=1:length(enn)
-                    line([set1{1}(i) set2{1}(i)],[set1{2}(i) set2{2}(i)],'Color',[1 1 1]*0.7)
-                end
-                hold off
-            end
-            mx = max([max(set1{1}) max(set1{2})]);
-            ticks = 10^floor(log10(mx));
-            ticks = 0:ticks:10*ticks;
-                
-            set(gca,'XTick',ticks,'YTick',ticks,'XTickLabel',ticks,'YTickLabel',ticks)
-            axis(1.1*[0 1 0 1]*mx)
-            set(refline(1),'Color',[1 1 1]*0.7,'LineWidth',.5,'LineStyle',':')
-            xlabel(lx)
-            ylabel(ly)
-            grid on            
-            if doThresh
-                if doCorrs
-                    title 'pairwise connectivity (thresh corrs)'
-                else
-                    title 'pairwise connectivity (LV-GLASSO)'
-                end
-            else
-                if doCorrs
-                    title 'average sample correlations'
-                else
-                    title 'average partial correlations'
-                end
-            end
-            fig.cleanup
-            fig.save('~/Desktop/scatter.eps')
         end
         
         
         function network(key)
-            % keys = fetch(aodi.CovMatrix & 'method=100' & 'filter_id=6' & pro(aodi.OriTuning,'stim_idx->s2') & (aodi.TrialTraces & 'evoked_bins>5'))
+            % keys = fetch(aodi.CovMatrix & 'method=100' & 'filter_id=11' & pro(aodi.OriTuning,'stim_idx->s2') & (aodi.TrialTraces & 'evoked_bins>5'))
             assert(1==count(aodi.CovMatrix & key), 'one matrix at a time please')
             assert(strcmp('lv-glasso', fetch1(aodi.CovMethod & key,'regularization')), ...
                 'lv-glasso regularizaton is required')
@@ -297,7 +339,6 @@ classdef plots
             fname = fullfile(aodi.plots.figPath,...
                 ['network' sprintf('%05d-%s--%02d',key.mouse_id,key.exp_date,key.scan_idx)]);
             
-            fragmentRadius = inf;
             if doInteractions
                 paperSize = [12 11];
                 lineWidth = 0.5;
@@ -306,14 +347,14 @@ classdef plots
             % get cell positions, tuning, and sparse interactions
             key = fetch(aodi.CovMatrix & key);
             assert(isscalar(key))
-            xyz = fetch1(aodi.TrialTraces & key,'cell_xyz');
+            [xyz,cellTypes] = fetch1(aodi.TrialTraces & key,'cell_xyz','celltypes');
             selection = fetch1(aodi.ActiveCells & key, 'selection');
             [ori,pval] = fetch1(aodi.OriTuning & rmfield(key,'stim_idx'), 'von_pref','von_p_value');
             [S,L] = fetch1(aodi.CovMatrix & key, 'sparse', 'lowrank');
             S = -corrcov(S);  % convert to partial correlations
             
             % thresholded correlations
-            C0= corrcov(fetch1(aodi.CovMatrix & setfield(key, 'method', 0), 'corr_matrix')); %#ok<SFLD>
+            C0= fetch1(aodi.CovMatrix & setfield(key, 'method', 0), 'corr_matrix'); %#ok<SFLD>
             sparsity = fetch1(aodi.CovMatrix & key, 'sparsity');
             p = size(C0,1);
             [i,j] = ndgrid(1:p,1:p);
@@ -331,13 +372,13 @@ classdef plots
             
             % plot balls
             hue = mod(ori(:)/pi,1);
-            sat = pval(:)<alpha;
+            sat = pval(:)<alpha;            
             val = (1-.2*(pval(:)>=alpha)).*selection(:);
             color = hsv2rgb([hue sat val]);
             clear hue sat val
             
-            fragIdx = (x-xoffset).^2+(y-yoffset).^2+(z-zoffset).^2 < fragmentRadius^2;
-            
+            fragIdx = true(size(x)); 
+          
             scatter3sph(x(fragIdx),y(fragIdx),z(fragIdx),'siz',3,'col',color(fragIdx,:))
             light('Position',[0.5 0.5 1],'Style','infinit','Color',[1 1 1])
             lighting gouraud
