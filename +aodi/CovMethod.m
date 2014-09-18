@@ -16,7 +16,8 @@ classdef CovMethod < dj.Relvar
             self.inserti({
                 
             0   1 0  'sample'  {} 1
-            5   1 0  'sample'  {} 0
+            1   0 0  'sample'  {} 1
+            5   1 0  'sample'  {} 1
 
             %             1   0 0  'sample'  {} 1
 %             2   0 1  'sample'  {} 1
@@ -29,6 +30,7 @@ classdef CovMethod < dj.Relvar
 %            90  1 0  'lv-glasso' {exp(-7:.05:-1) exp(-5:.05:-1)} 1
             
             100  1 0  'lv-glasso' {exp(-7:.05:-1.5) exp(-5:.05:-1.5)} 1
+            101  0 0  'lv-glasso' {exp(-7:.05:-1.5) exp(-5:.05:-1.5)} 1
             105  1 0  'lv-glasso' {exp(-7:.05:-1.5) exp(-5:.05:-1.5)} 0
             })
         end
