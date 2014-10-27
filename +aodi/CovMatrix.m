@@ -58,15 +58,18 @@ classdef CovMatrix < dj.Relvar & dj.AutoPopulate
                     cove.crossEstimateHyper(X, evokedBins, ...
                     opt.regularization, opt.hyperparam_space);
             else
-                % no hyperparameters, just estimate the best delta
-                % (variance regularization)
+                % no hyperparameters
                 hypers = cell2mat(opt.hyperparam_space);
-                K = 10;  % inner-loop cross-validation
-                % find best delta (shrinkage of condition-specific variances toward common variance)
-                [XTest_,R_,M_,V_] = arrayfun(@(k) estimate_(hypers,k,K), 1:K, 'uni', false);
-                bestDelta = mean(cellfun(@(xt,R,M,V) ...
-                    cove.findBestDelta(xt,R,M,V), ...
-                    XTest_, R_, M_, V_));
+                bestDelta = 0;
+                if opt.regularize_variance
+                    % (variance regularization)
+                    K = 10;  % inner-loop cross-validation
+                    % find best delta (shrinkage of condition-specific variances toward common variance)
+                    [XTest_,R_,M_,V_] = arrayfun(@(k) estimate_(hypers,k,K), 1:K, 'uni', false);
+                    bestDelta = mean(cellfun(@(xt,R,M,V) ...
+                        cove.findBestDelta(xt,R,M,V), ...
+                        XTest_, R_, M_, V_));
+                end
             end
             [R,M,V,extras] = cove.estimate(X, evokedBins, opt.regularization, hypers);
             key.corr_matrix = R;

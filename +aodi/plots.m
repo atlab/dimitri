@@ -7,45 +7,211 @@ classdef plots
     methods(Static)
         
         
+        function pvOri
+            aodi.plots.pvOriPlot(true, false,'PV','noise correlations',          'ori-scor');
+            aodi.plots.pvOriPlot(false,false,'PV','partial noise correlations',  'ori-pcor');
+            aodi.plots.pvOriPlot(false,true, 'PV','avg conn strength (LV-GLASSO)',    'ori-sconn')
+            aodi.plots.pvOriPlot(true, true, 'PV','avg conn strength (thresh. corrs)','ori-pconn')
+        end        
         
-        function pvDist
-            aodi.plots.pvDistPlot(true, false,'PV','noise correlations',          'dist-scor');
-            aodi.plots.pvDistPlot(false,false,'PV','partial noise correlations',  'dist-pcor');
-            aodi.plots.pvDistPlot(false,true, 'PV','connectivity (LV-GLASSO)',    'dist-sconn')
-            aodi.plots.pvDistPlot(true, true, 'PV','connectivity (thresh. corrs)','dist-pconn')
+        
+        
+        function pvOriPlot(doCorrs,doThresh,cellType,titl,fname)
+            bins = [0 15 45];
+            [A,B] = aodi.plots.pvOriHelper(doCorrs,doThresh,cellType,bins);
+            bins2 = [bins(2:end) 90];
+            
+            style = {'v-' 'o-' 's-'};
+            ti = {[cellType '-/-'],[cellType '-/+'] [cellType '+/+']};
+            mx = max(reshape(A(:,1:2,:),[],1));
+            if ~isempty(B)
+                mn = min(0,min([reshape(A(:,1:2,:),[],1);reshape(B(:,1:2,:),[],1)]));
+            else
+                mn = min(0,min(reshape(A(:,1:2,:),[],1)));
+            end
+            s = 10^floor(log10(mx));
+            yticks = (-10:10)*(floor(mx/s)*s);
+            
+            for i=1:3
+                fig = Figure(1,'size',[60 50]);
+                if i==3
+                    A = nanmean(A,3);
+                    B = nanmean(B,3);
+                end
+                if ~doThresh
+                    plot(bins/2+bins2/2, squeeze(A(:,i,:)) ,style{i},...
+                        'Color',[.4 .4 .4],'MarkerFaceColor',[.6 .6 .6],'MarkerEdgeColor',[0 0 0],'MarkerSize',3);
+                else
+                    plot(bins/2+bins2/2, squeeze(A(:,i,:)) ,style{i},...
+                        'Color',[.4 1 .4],'MarkerFaceColor',[.6 1 .6],'MarkerEdgeColor',[0 1 0],'MarkerSize',3);
+                    hold on
+                    plot(bins/2+bins2/2, squeeze(B(:,i,:)) ,style{i},...
+                        'Color',[1 .4 .4],'MarkerFaceColor',[1 .6 .6],'MarkerEdgeColor',[1 0 0],'MarkerSize',3);
+                    hold off
+                end
+                set(gca,'YTick',yticks,'YTickLabel',arrayfun(@(g) sprintf('%g',g), yticks, 'uni', false))
+                set(gca,'XTick',union(bins,bins2))
+                grid on
+                ylabel(titl)
+                xlabel '\Deltaori (degrees)'
+                title(ti{i})
+                ylim([mn mx]+[-(mn<0) 1]*0.05*mx)
+                xlim([bins(1) bins2(end)])
+                
+                fig.cleanup
+                set(gca,'Position',[0.22 0.20 0.70 0.70])
+                fig.save(fullfile(aodi.plots.figPath,sprintf('%s-%u.eps', fname, i)))
+            end
         end
         
         
-        function pvDistPlot(doCorrs,doThresh,cellType,titl,fname)
+        function [A,B] = pvOriHelper(doCorrs,doThresh,cellType,bins)
+            A = [];
+            B = [];
+            minPerBin = 20;
+            oriRel = pro(aodi.OriTuning,'stim_idx->s2','*');
+            keys = fetch(aodi.CovMatrix & 'filter_id=11' & 'method=100' & ...
+                (aodi.TrialTraces & 'evoked_bins>5') & (aodi.Labels & struct('celltype',cellType)) & oriRel);
+            for key = keys'
+                assert(1==count(aodi.CovMatrix & key), 'one matrix at a time please')
+                assert(1==count(oriRel & key), 'must have one orientation map')
+                assert(strcmp('lv-glasso', fetch1(aodi.CovMethod & key,'regularization')), ...
+                    'lv-glasso regularizaton is required')
+                [S,selection,cellTypes,L,pref,pval] = fetch1(...
+                    aodi.CovMatrix*aodi.ActiveCells*aodi.TrialTraces*oriRel & key, ...
+                    'sparse','selection','celltypes','lowrank','von_pref','von_p_value');
+                p = sum(selection);
+                pref = pref(selection)*180/pi;
+                pval = pval(selection);
+                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',7),'corr_matrix');
+                if cove.avgCorr(C0)>0.2
+                    % limit to sites that have low average correlations
+                    continue
+                end
+                
+                if doCorrs
+                    % substitute S with thresholded correlations
+                    if ~doThresh
+                        S = C0;
+                    else
+                        [i,j] = meshgrid(1:p,1:p);
+                        thresh = quantile(abs(C0(i(:)<j(:))),cove.sparsity(S));
+                        S = C0.*(abs(C0)>thresh);
+                    end
+                end
+                
+                cellTypes = cellTypes(selection);
+                pv = cellfun(@(c) strcmp(c,cellType), cellTypes);
+                
+                if any(pv)
+                    fprintf('%d latent units (%d observed)\n', size(L'))
+                    if doThresh
+                        if ~doCorrs
+                            d = (S-L*L')^.5;
+                            S = -d\S/d;
+                        end
+                        S = S.*(1-eye(p));
+                    else
+                        % average correlations are stored in the excitatory
+                        % connections
+                        if ~doCorrs
+                            S = corrcov(S-L*L');
+                        end
+                    end
+                end
+                if ~doCorrs && ~doThresh
+                    % flip the sign back
+                    S = -S;
+                end
+                
+                [i,j] = ndgrid(1:size(S,1),1:size(S,2));
+                ix = sub2ind(size(S),i(i<j),j(i<j));
+                S = S(ix);
+                D = ne7.rf.oriDiff(pref(i(ix)), pref(j(ix)));
+                D(pval(i(ix))>0.05 | pval(j(ix))>0.05)=nan;
+                pairTypes = 1+pv(i(ix))+pv(j(ix));
+                
+                A_  = [];
+                B_  = [];
+                c = inf;
+                %                avgConn = mean(logical(S));
+                for pairType = 1:3
+                    ix = pairTypes==pairType;
+                    b = sum(bsxfun(@ge,D(ix),bins),2);
+                    if i<3
+                        c = min(c,min(hist(b(b>0),1:length(bins))));
+                    end
+                    ix(ix) = b>0;
+                    b = b(b>0);
+                    if ~doThresh
+                        A_ = cat(2,A_,accumarray(b, S(ix), [length(bins) 1], @mean));
+                    else
+                        ix = find(ix);
+                        A_ = cat(2,A_,accumarray(b(S(ix)>0), S(ix(S(ix)>0)), [length(bins) 1], @mean, nan));
+                        B_ = cat(2,B_,accumarray(b(S(ix)<0), S(ix(S(ix)<0)), [length(bins) 1], @mean, nan));
+                    end
+                end
+                if c>=minPerBin
+                    A = cat(3,A,A_);
+                    B = cat(3,B,B_);
+                end
+            end
+        end
+
+        
+        function pvDist
+            aodi.plots.pvDistPlot(true, false,false,'PV','noise corrs',    'dist-scor');
+            aodi.plots.pvDistPlot(false,false,false,'PV','partial corrs',  'dist-pcor');
+            aodi.plots.pvDistPlot(true,true, false,'PV','% connectivity (sparse pcorrs)',    'dist-sconn')
+            aodi.plots.pvDistPlot(false, true, false,'PV','% connectivity (thresh. corrs)','dist-pconn')
+            aodi.plots.pvDistPlot(true,true, true, 'PV','neg/pos conn ratio (sparse pcorss)','dist-sratio')
+            aodi.plots.pvDistPlot(false, true, true, 'PV','neg/pos conn ratio (thresh. corrs)','dist-pratio')
+        end
+        
+        
+        
+        function pvDistPlot(doCorrs,doThresh,doRatio,cellType,titl,fname)
             bins = [0 30 75 150];
             [A,B] = aodi.plots.pvDistHelper(doCorrs,doThresh,cellType,bins);
             bins2 = [bins(2:end) 200];
             
-            style = {'v-','o-'};
-            ti = {'PV -/-','PV -/+'};
-            mx = max(A(:));
-            mn = min(0,min(A(:)));
+            style = {'v-','o-','s-'};
+            ti = {[cellType '-/-'],[cellType '-/+'],[cellType '+/+']};
+            mx = max(reshape(A(:,1:2,:),[],1));
+            mn = min(0,min(reshape(A(:,1:2,:),[],1)));
             s = 10^floor(log10(mx));
             yticks = [0 floor(mx/s)*s];
             
-            for i=1:2
+            for i=1:3
+                if i==3
+                    A = nanmean(A,3);
+                    B = nanmean(B,3);
+                end
                 fig = Figure(1,'size',[60 50]);
                 if ~doThresh
-                    plot(bins/2+bins2/2-2, squeeze(A(:,i,:)) ,style{i},...
+                    plot(bins/2+bins2/2, squeeze(A(:,i,:)) ,style{i},...
                         'Color',[.4 .4 .4],'MarkerFaceColor',[.6 .6 .6],'MarkerEdgeColor',[0 0 0],'MarkerSize',3);
                 else
-                    plot(bins/2+bins2/2-2, squeeze(A(:,i,:)) ,style{i},...
-                        'Color',[.4 1 .4],'MarkerFaceColor',[.6 1 .6],'MarkerEdgeColor',[0 1 0],'MarkerSize',3);
-                    hold on
-                    plot(bins/2+bins2/2-2, squeeze(B(:,i,:)) ,style{i},...
-                        'Color',[1 .4 .4],'MarkerFaceColor',[1 .6 .6],'MarkerEdgeColor',[1 0 0],'MarkerSize',3);
-                    hold off                    
+                    if doRatio
+                        plot(bins/2+bins2/2, (squeeze(A(:,i,:))+squeeze(B(:,i,:))).\squeeze(B(:,i,:)) ,style{i},...
+                            'Color',[.4 .4 .4],'MarkerFaceColor',[.6 .6 .6],'MarkerEdgeColor',[0 0 0],'MarkerSize',3);
+                        mx = 0.9;
+                        mn = 0;
+                        yticks = [0 .5];
+                    else
+                        plot(bins/2+bins2/2, squeeze(A(:,i,:)) ,style{i},...
+                            'Color',[.4 1 .4],'MarkerFaceColor',[.6 1 .6],'MarkerEdgeColor',[0 1 0],'MarkerSize',3);
+                        hold on
+                        plot(bins/2+bins2/2, squeeze(B(:,i,:)) ,style{i},...
+                            'Color',[1 .4 .4],'MarkerFaceColor',[1 .6 .6],'MarkerEdgeColor',[1 0 0],'MarkerSize',3);
+                        hold off  
+                    end
                 end
                 set(gca,'YTick',yticks,'YTickLabel',arrayfun(@(g) sprintf('%g',g), yticks, 'uni', false))
                 set(gca,'XTick',bins)
                 grid on
                 ylabel(titl)
-                xlabel('distance (\mum)')
+                xlabel 'Distance (\mum)'
                 title(ti{i})
                 ylim([mn mx]+[-(mn<0) 1]*0.05*mx)
                 
@@ -60,7 +226,7 @@ classdef plots
         function [A,B] = pvDistHelper(doCorrs,doThresh,cellType,bins)
             A = [];
             B = [];
-            minPerBin = 20;
+            minPerBin = 10;
             keys = fetch(aodi.CovMatrix & 'filter_id=11' & 'method=100' & ...
                 (aodi.TrialTraces & 'evoked_bins>5') & (aodi.Labels & struct('celltype',cellType)));
             for key = keys'
@@ -72,7 +238,7 @@ classdef plots
                     aodi.CovMatrix*aodi.ActiveCells*aodi.TrialTraces & key, ...
                     'sparse','selection','celltypes','lowrank','cell_xyz');
                 p = sum(selection);
-                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',0),'corr_matrix');
+                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',7),'corr_matrix');
                 if cove.avgCorr(C0)>0.08
                     continue
                 end
@@ -124,10 +290,12 @@ classdef plots
                 B_  = [];
                 c = inf;
 %                avgConn = mean(logical(S));
-                for pairType = 1:2
+                for pairType = 1:3
                     ix = pairTypes==pairType;
                     b = sum(bsxfun(@ge,D(ix),bins),2);
-                    c = min(c,min(hist(b,1:length(bins))));
+                    if i<3
+                        c = min(c,min(hist(b,1:length(bins))));
+                    end
                     if ~doThresh
                         A_ = cat(2,A_,accumarray(b, S(ix), [length(bins) 1], @mean));
                     else
@@ -192,7 +360,7 @@ classdef plots
             cor = zeros(0,3);
             for key = keys'
                 sel = fetch1(aodi.ActiveCells & key, 'selection');
-                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',1), 'corr_matrix');
+                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',7), 'corr_matrix');
                 if cove.avgCorr(C0) > 0.05
                     continue
                 end
@@ -305,26 +473,35 @@ classdef plots
             
         
         function pvConn
-            aodi.plots.pvConnPlot(true, false,'PV','noise correlations',          'PV-scorr')
-            aodi.plots.pvConnPlot(false,false,'PV','partial corrs',               'PV-pcorr')
-            aodi.plots.pvConnPlot(false,true, 'PV','Connectivity (LV-GLASSO)',    'PV-pconn')
-            aodi.plots.pvConnPlot(true, true, 'PV','Connectivity (thresh. corrs)','PV-sconn')
+            aodi.plots.pvConnPlot(true, false,false,'PV','noise correlations',          'PV-scorr')
+            aodi.plots.pvConnPlot(false,false,false,'PV','partial corrs',               'PV-pcorr')
+            aodi.plots.pvConnPlot(false,true, false,'PV','Connectivity (sparse partial)',    'PV-pconn')
+            aodi.plots.pvConnPlot(false,true, true,'PV','Neg/pos ratio (sparse partial)',    'PV-pratio')
+            aodi.plots.pvConnPlot(true, true, false,'PV','Connectivity (thresh. corrs)','PV-sconn')
+            aodi.plots.pvConnPlot(true, true, true,'PV','Neg/pos ratio (thresh. corrs)','PV-sratio')
+
         end
         
-        function pvConnPlot(doCorrs,doThresh,cellType,titl,filepath)
+        function pvConnPlot(doCorrs,doThresh,doRatio,cellType,titl,filepath)
             [enn,epn,epp,inn,ipn,ipp] = aodi.plots.pvConnHelper(doCorrs,doThresh,cellType);
             filepath = fullfile(aodi.plots.figPath, filepath);
             
             fig = Figure(1,'size',[60 80]);
-            plot(1:3,[enn;epn;epp],'^-','Color',[.4 .7 .4],'MarkerFaceColor',[.7 1 .7],'MarkerEdgeColor',[0 .4 0])
-            hold on
-            if ~isempty(inn)
-                plot(1:3,[inn;ipn;ipp],'o-','Color',[.7 .4 .4],'MarkerFaceColor',[1 .7 .7],'MarkerEdgeColor',[.4 0 0])
+            if doRatio
+                plot(1:3,[inn;ipn;ipp]./([enn;epn;epp]+[inn;ipn;ipp]),'^-','Color',[.4 .4 .4],'MarkerFaceColor',[.7 .7 .7],'MarkerEdgeColor',[0 0 0])
+            else
+                if isempty(inn)
+                    plot(1:3,[enn;epn;epp],'^-','Color',[.4 .4 .4],'MarkerFaceColor',[.7 .7 .7],'MarkerEdgeColor',[0 0 0])
+                else
+                    plot(1:3,[enn;epn;epp],'^-','Color',[.4 .7 .4],'MarkerFaceColor',[.7 1 .7],'MarkerEdgeColor',[0 .4 0])
+                    hold on
+                    plot(1:3,[inn;ipn;ipp],'o-','Color',[.7 .4 .4],'MarkerFaceColor',[1 .7 .7],'MarkerEdgeColor',[.4 0 0])
+                    hold off
+                end
             end
-            hold off
             xlim([0.5 3.5])
             box off
-            set(gca,'XTick',1:3, 'XTickLabel', {'-/-','-/+','+/+'})
+            set(gca,'XTick',1:3, 'XTickLabel', {'-/-','-/+','+/+'},'YGrid','on')
             toStr = @(s) sprintf('%0.3g',s);
             set(gca,'YTickLabel', arrayfun(toStr,get(gca,'YTick'),'uni',false))
             title(titl)
@@ -351,7 +528,7 @@ classdef plots
                     aodi.CovMatrix*aodi.ActiveCells*aodi.TrialTraces & key, ...
                     'sparse','selection','celltypes','lowrank');
                 p = sum(selection);
-                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',1),'corr_matrix');
+                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',7),'corr_matrix');
                 if cove.avgCorr(C0)>0.05
                     continue
                 end
@@ -416,9 +593,11 @@ classdef plots
                 & pro(aodi.OriTuning,'stim_idx->s2')...
                 & (aodi.TrialTraces & 'evoked_bins>5')...
                 & (aodi.Labels & 'celltype="pv"');
+            usedKeys = [];
             for key = rel.fetch'
-                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',0),'corr_matrix');
+                C0 = fetch1(aodi.CovMatrix & setfield(key,'method',7),'corr_matrix');
                 if cove.avgCorr(C0)<0.1
+                    usedKeys = [usedKeys key];
                     aodi.plots.network(key,'pv')
                 end
             end
