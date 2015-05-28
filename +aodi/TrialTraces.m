@@ -22,7 +22,7 @@ trace_segments              : longblob                      # trace segements: n
 classdef TrialTraces < dj.Relvar & dj.AutoPopulate
     
     properties
-        popRel  = vis2p.MaskGroup * pro(vis2p.MaskGroupRaw) * vis2p.VisStims * aodi.Filter & 'algorithm="fast_oopsi"'
+        popRel  = vis2p.MaskGroup * pro(vis2p.MaskGroupRaw) * vis2p.VisStims * aodi.Filter & 'algorithm="fast_oopsi"' & 'filter_id in (4,11)'
     end
     
     methods(Access=protected)

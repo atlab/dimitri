@@ -88,6 +88,7 @@ classdef plots
                     % limit to sites that have low average correlations
                     continue
                 end
+                disp(key)
                 
                 if doCorrs
                     % substitute S with thresholded correlations

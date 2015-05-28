@@ -2,9 +2,9 @@
 carfs.Trace (computed) # deconvolved traces
 -> carfs.TraceSet
 -> vis2p.MaskTraces
------
-mask_type : enum('neuron','red')   # fluorescent label
-trace     : longblob  # deconvovled trace
+---
+mask_type                   : enum('neuron','red','astrocyte') # fluorescent label
+trace                       : longblob                      # deconvovled trace
 %}
 
 classdef Trace < dj.Relvar
