@@ -10,7 +10,7 @@ trace_times   : longblob  #  (s) frame times taken from vis2p.VisStims
 classdef TraceSet < dj.Relvar & dj.AutoPopulate
     
     properties
-        popRel  = vis2p.MaskGroup * pro(vis2p.MaskGroupRaw);
+        popRel  = vis2p.MaskGroup * pro(vis2p.MaskGroupRaw) & (vis2p.Scans & 'scan_prog="AOD"')
         %            & pro(vis2p.VisStims & 'exp_type="NatImExperiment"')
     end
     

@@ -14,18 +14,22 @@ classdef NoiseMap < dj.Relvar
         function dump(self)
             for key = self.fetch'
                 disp(key)
+                folder = sprintf('~/Desktop/carfs/%d', key.mouse_id);
+                if ~exist(folder, 'dir')
+                    mkdir(folder)
+                end
                 map = fetch1(self & key, 'noise_map');
                 if any(isnan(map(:)))
                     disp 'found nans'
                 else
-                    mx = max(abs(map(:)));
-                    map = round(map/mx*31.5 + 32.5);
+                    mx = 0.05; % max(abs(map(:)));
+                    map = max(1, min(64, round(map/mx*31.5 + 32.5)));
                     cmap = ne7.vis.doppler;
 
                     for i=1:size(map,3)
                         im = reshape(cmap(map(:,:,i),:),[size(map,1) size(map,2) 3]);
-                        f = sprintf('~/Desktop/carfs/%d/%d-%d_%02d.png',...
-                            key.mouse_id, key.scan_idx, key.masknum, i);
+                        f = fullfile(folder, ...
+                            sprintf('%d-%d_%02d.png', key.scan_idx, key.masknum, i));
                         imwrite(im,f)
                     end
                 end
@@ -33,11 +37,10 @@ classdef NoiseMap < dj.Relvar
         end
         
         
-        function makeTuples(self, key)
+        function makeTuples(self, key, binSize)
             
             % temporal binning
-            nBins = 12;
-            binSize = 0.04;  %s
+            nBins = 6;
             
             disp 'fetching traces...'
             traceTimes = fetch1(carfs.TraceSet & key,'trace_times');
@@ -74,7 +77,7 @@ classdef NoiseMap < dj.Relvar
                 
                 t0 = max(traceTimes(1),onset+(nBins-1)*binSize)+0.05;  % start time for traces
                 t1 = t0-(nBins-1)*binSize;                             % start time for movie
-                t2 = min(traceTimes(end),offset);                      % end time for both
+                t2 = min(traceTimes(end), offset);                     % end time for both
                 
                 traceSnippets = interp1(traceTimes,traces,t0:binSize:t2);
                 stimTimes = onset+(0:size(movie,3)-1)/fps;
