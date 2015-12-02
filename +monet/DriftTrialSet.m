@@ -13,8 +13,11 @@ classdef DriftTrialSet < dj.Relvar & dj.AutoPopulate
 	methods(Access=protected)
 
 		function makeTuples(self, key)
-		%!!! compute missing fields for key here
 			self.insert(key)
+            iTrial = 0;
+            for key = fetch(psy.Trial * rf.Sync & key)'
+                iTrial = makeTuples(monet.DriftTrial, key, iTrial);
+            end
 		end
 	end
 
