@@ -51,7 +51,8 @@ classdef RF < dj.Relvar & dj.AutoPopulate
             t1 = t0-(nBins-1)*binSize;                                 % start time for stimulus
             t2 = min(caTimes(end),stimTimes(end));                     % end time for both
             movie = permute(interp1(stimTimes',permute(movie,[3 1 2]),(t1:binSize:t2)','linear'),[2 3 1]);
-            
+            sz = size(movie);
+
             method = fetch1(monet.RFMethod & key, 'method');
             
             disp 'computing RF...'
@@ -77,8 +78,6 @@ classdef RF < dj.Relvar & dj.AutoPopulate
                 disp 'computing RF...'
                 switch method
                     case 'STA'                        
-                        % decorrelate spike train
-                        sz = size(movie);
                         map = reshape(conv2(fliplr(reshape(movie,sz(1)*sz(2),sz(3))),trace','valid'),sz(1),sz(2),[]);
                     otherwise
                         error('The "%s" method is not implemented yet', method)
