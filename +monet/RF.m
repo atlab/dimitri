@@ -22,7 +22,7 @@ classdef RF < dj.Relvar & dj.AutoPopulate
 		function makeTuples(self, key)
             
             % temporal binning
-            nBins = 8;
+            nBins = 6;
             binSize = 0.1;  %s
             
             disp 'loading movies ...'
@@ -92,7 +92,7 @@ classdef RF < dj.Relvar & dj.AutoPopulate
                 tuple.degrees_y = degSize(2);
                 tuple.map = single(map);
                 
-                imagesc(map(:,:,2),[-1 1]*0.05), axis image
+                imagesc(map(:,:,1),[-1 1]*0.05), axis image
                 colormap(ne7.vis.doppler)
                 drawnow
                 self.insert(tuple)
