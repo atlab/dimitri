@@ -19,7 +19,7 @@ classdef DriftTrial < dj.Relvar
             frameTimes = fetch1(rf.Sync & key, 'frame_times');
             [version, params, flips] = fetch1(psy.MovingNoise*psy.MovingNoiseLookup*psy.Trial & key, ...
                 'moving_noise_version', 'params', 'flip_times');
-            assert(ismember(version, 1), 'update the analysis for new stimulus version')
+            %assert(ismember(version, [1 2]), 'update the analysis for new stimulus version')
             frametimes = params{4}.frametimes;
             directions = params{4}.direction;
             onsets = interp1(frametimes, flips, params{4}.onsets);

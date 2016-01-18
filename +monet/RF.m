@@ -17,6 +17,27 @@ classdef RF < dj.Relvar & dj.AutoPopulate
         popRel = rf.Sync*rf.Segment*monet.RFMethod & (psy.Session*psy.Trial*psy.MovingNoise)
     end
     
+    
+    methods
+        function dump(self)
+            for key = self.fetch'
+                disp(key)
+                map = fetch1(self & key, 'map');
+                mx = max(abs(map(:)));
+                map = round(map/mx*31.5 + 32.5);
+                cmap = ne7.vis.doppler;
+                
+                for i=1:size(map,3)
+                    im = reshape(cmap(map(:,:,i),:),[size(map,1) size(map,2) 3]);
+                    f = sprintf('~/Desktop/carfs/%s-%d/%d-%d_%02d.png',...
+                        fetch1(monet.RFMethod & key, 'method'), key.animal_id, key.scan_idx, key.trace_id, i);
+                    imwrite(im,f)
+                end
+            end
+        end
+        
+    end
+    
     methods(Access=protected)
         
         function makeTuples(self, key)
@@ -39,7 +60,7 @@ classdef RF < dj.Relvar & dj.AutoPopulate
             
             disp 'concatenating stimulus movies...'
             stimTimes = cat(2,stimTimes{:});
-            movie = double(cat(3,movie{:}))/127-1;
+            movie = (double(cat(3,movie{:}))-1)/126-1;
             
             disp 'interpolation...'
             % clip stimulus movie to fit within the calcium recording to avoid extrapolation
@@ -67,7 +88,7 @@ classdef RF < dj.Relvar & dj.AutoPopulate
                 k = k/sum(k);
                 trace = double(traces{iTrace});
                 trace = (trace-ne7.dsp.convmirr(double(trace),k))/mean(trace);
-                trace = fast_oopsi(trace,struct('dt',dt),struct('lambda',0.3));
+                %trace = fast_oopsi(trace,struct('dt',dt),struct('lambda',.01));
                 
                 % interpolate to common time bins
                 k = hamming(2*round(binSize/dt)+1); k = k/sum(k);  % interpolation kernel

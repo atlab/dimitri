@@ -3,6 +3,7 @@ pre.ScanInfo (imported) # header information
 -> rf.Scan
 ---
 nframes_requested           : int                           # number of valumes (from header)
+nframes                     : int                           # frames recorded
 px_width                    : smallint                      # pixels per line
 px_height                   : smallint                      # lines per frame
 um_width                    : float                         # width in microns
@@ -38,17 +39,23 @@ classdef ScanInfo < dj.Relvar & dj.AutoPopulate
             else
                 key.nframes_requested = reader.header.acqNumFrames;
             end
+            key.nframes = reader.nframes;
             sz = size(reader);
             key.px_height = sz(2);
             key.px_width  = sz(1);
                        
-            %%%% Find appropriate field of view
-            fov=560;
-            %%%%
-            
+            %%%% compute field of view
             zoom = reader.header.scanZoomFactor;
-            key.um_height = fov/zoom*reader.header.scanAngleMultiplierSlow;
-            key.um_width  = fov/zoom*reader.header.scanAngleMultiplierFast;
+            fov = rf.FOV * pro(rf.Session*rf.Scan & key, 'lens', 'session_date') & 'session_date>=fov_date';
+            mags = fov.fetchn('mag');
+            [~, i] = min(abs(log(mags/zoom)));
+            mag = mags(i); % closest measured magnification
+            [key.um_width, key.um_height] = fetch1(fov & struct('mag', mag), 'width', 'height');
+            key.um_width = key.um_width * zoom/mag;
+            key.um_height = key.um_height * zoom/mag;
+            assert(reader.header.scanAngleMultiplierSlow == 1 && ...
+                reader.header.scanAngleMultiplierFast == 1, 'altered scanAngleMultipliers');
+            %%%%
             if reader.header.fastZActive
                 key.fps =  1/reader.header.fastZPeriod;
                 key.slice_pitch = reader.header.stackZStepSize;
