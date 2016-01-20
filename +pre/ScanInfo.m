@@ -16,7 +16,7 @@ nchannels                   : tinyint                       # number of recorded
 nslices                     : tinyint                       # number of slices
 slice_pitch                 : float                         # (um) distance between slices
 nframe_avg                  : smallint                      # number of averaged frames
-fill_fraction=0             : float                         # raster scan fill fraction (see scanimage)
+fill_fraction               : float                         # raster scan fill fraction (see scanimage)
 %}
 
 classdef ScanInfo < dj.Relvar & dj.AutoPopulate
