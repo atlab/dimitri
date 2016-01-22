@@ -1,10 +1,11 @@
 %{
-pre.AlignMotion (imported) #  motion correction
+pre.AlignMotion (imported) # motion correction
 -> pre.AlignRaster
------
+---
 motion_xy                   : longblob                      # (pixels) y,x motion correction offsets
 motion_rms                  : float                         # (um) stdev of motion
-align_times=CURRENT_TIMESTAMP : timestamp                     # automatic
+align_times=CURRENT_TIMESTAMP: timestamp                    # automatic
+avg_frame=null              : longblob                      # averaged aligned frame
 %}
 
 classdef AlignMotion < dj.Relvar & dj.AutoPopulate
@@ -24,8 +25,8 @@ classdef AlignMotion < dj.Relvar & dj.AutoPopulate
             
             anscombe = @(img) 2*sqrt(max(0, img-zero_var_intercept)/quantal_size+3/8);   % Anscombe transform
             
-            reader = pre.getReader(key);
-            fixRaster = self.fixRaster(key);
+            reader = pre.getReader(key, '~/cache');
+            fixRaster = get_fix_raster_fun(pre.AlignRaster & key);
             getFrame = @(iframe) fixRaster(anscombe(double(reader(:,:,:,:,iframe))));
             sz = size(reader);
             
@@ -62,7 +63,6 @@ classdef AlignMotion < dj.Relvar & dj.AutoPopulate
                 avgFrame = avgFrame + ne7.ip.correctMotion(frame, [x;y])/nframes;
             end
             % edge-preserving smoothening
-            w = xy;
             for iter=1:3
                 m = medfilt1(xy,5,[],2);  xy=sign(xy-m).*max(0,abs(xy-m)-0.15)+m;
             end
@@ -73,6 +73,7 @@ classdef AlignMotion < dj.Relvar & dj.AutoPopulate
             xy = bsxfun(@minus, xy, mean(xy,2));  % subtract mean
             d = sqrt(sum(xy.^2));   % distance from average position
             key.motion_rms = sqrt(mean(d.^2));   % root mean squared distance
+            key.avg_frame=avgFrame;
                         
             self.insert(key)
         end

@@ -3,7 +3,7 @@ function reader = getReader(key, cache_dir)
 [path, basename, scanIdx] = fetch1(rf.Session*rf.Scan & key, ...
     'scan_path', 'file_base', 'scan_idx');
 
-if nargin <= 1
+if nargin <= 1 || ~exist(cache_dir, 'file')==7
     fprintf('Loading from %s\n', path);
     path = getLocalPath(fullfile(path, sprintf('%s_%03u.tif', basename, scanIdx)));
     reader = ne7.scanimage.Reader4(path);
