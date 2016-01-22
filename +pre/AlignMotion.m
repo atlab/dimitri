@@ -13,21 +13,19 @@ classdef AlignMotion < dj.Relvar & dj.AutoPopulate
         popRel  = pre.AlignRaster
     end
     
+        
     methods(Access=protected)
         
         function makeTuples(self, key)
             tic
-            [fillFraction, rasterPhase, nslices] = fetch1(...
-                pre.AlignRaster*pre.ScanInfo & key, ...
-                'fill_fraction', 'raster_phase', 'nslices');
-            assert(nslices==1, 'adjust this code to handle multiple slices')
+            
             [zero_var_intercept, quantal_size] = fetch1(pre.ScanCheck & key, ...
                 'min_var_intensity', 'quantal_size');
             
-            fixRaster = @(img) ne7.ip.correctRaster(img, rasterPhase, fillFraction);
             anscombe = @(img) 2*sqrt(max(0, img-zero_var_intercept)/quantal_size+3/8);   % Anscombe transform
             
             reader = pre.getReader(key);
+            fixRaster = self.fixRaster(key);
             getFrame = @(iframe) fixRaster(anscombe(double(reader(:,:,:,:,iframe))));
             sz = size(reader);
             

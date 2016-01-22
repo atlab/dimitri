@@ -4,14 +4,14 @@ function reader = getReader(key, cache_dir)
     'scan_path', 'file_base', 'scan_idx');
 
 if nargin <= 1
-    fprintf('Loading data %s\n', path);
+    fprintf('Loading from %s\n', path);
     path = getLocalPath(fullfile(path, sprintf('%s_%03u.tif', basename, scanIdx)));
     reader = ne7.scanimage.Reader4(path);
 else
     [~, stump] = fileparts(path);
     cache_path = fullfile(cache_dir, stump);
     try
-        fprintf('Loading data %s\n', cache_path);
+        fprintf('Loading from %s\n', cache_path);
         tpath = getLocalPath(fullfile(cache_path, sprintf('%s_%03u.tif', basename, scanIdx)));
         reader = ne7.scanimage.Reader4(tpath);
     catch
